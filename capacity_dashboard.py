@@ -37,9 +37,6 @@ if uploaded_file:
 
     st.success("Workbook loaded successfully")
 
-    # =========================
-    # SERVICE FACTOR
-    # =========================
     truck_headers = cap.iloc[0, 1:6].tolist()
     expected_vals = cap.iloc[6, 1:6].tolist()
     lost_vals = cap.iloc[7, 1:6].tolist()
@@ -49,10 +46,7 @@ if uploaded_file:
     lost_per_robot = []
 
     for truck, exp, lost, fleet in zip(
-        truck_headers,
-        expected_vals,
-        lost_vals,
-        fleet_vals,
+        truck_headers, expected_vals, lost_vals, fleet_vals
     ):
         if pd.isna(fleet) or fleet == 0:
             continue
@@ -66,15 +60,11 @@ if uploaded_file:
     avg_hrs_per_robot = sum(service_factor.values()) / len(service_factor)
     avg_flyer_travel = (
         sum(lost_per_robot) / len(lost_per_robot)
-        if lost_per_robot
-        else DEFAULT_FLYER_TRAVEL
+        if lost_per_robot else DEFAULT_FLYER_TRAVEL
     )
 
     flyer_capacity = HOURS_PER_TECH - avg_flyer_travel
 
-    # =========================
-    # REGION MODEL
-    # =========================
     rows = []
 
     for _, row in projects.iterrows():
@@ -124,10 +114,9 @@ if uploaded_file:
 
     df["Covered Demand"] = df[["Weighted Hours", "Capacity"]].min(axis=1)
 
-    # Robot-based threshold
     df["Over Threshold"] = (
         df["Raw Robots"] - df["Hire Threshold (Robots)"]
-    ).clip(lower=0)
+    ).clip(lower=0) * avg_hrs_per_robot
 
     total_weighted = df["Weighted Hours"].sum()
     total_capacity = TECH_TOTAL * HOURS_PER_TECH
@@ -136,19 +125,20 @@ if uploaded_file:
     national_flying_need = math.ceil(national_gap / flyer_capacity)
     regional_hire_sum = df["Hire Need"].sum()
 
-    # =========================
-    # KPI CARDS
-    # =========================
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Weighted Demand", f"{total_weighted:,.0f} h")
     c2.metric("Current Capacity", f"{total_capacity:,.0f} h")
     c3.metric("Regional Hire Pressure", int(regional_hire_sum))
     c4.metric("National Flying Tech Need", national_flying_need)
 
-    # =========================
-    # CEO CHART
-    # =========================
-    st.subheader("Regional Capacity Coverage + Hire Threshold")
+    st.subheader("Demand Coverage, White-Space Risk and Hire Trigger")
+
+    max_hours = max(
+        df["Weighted Hours"].max(),
+        df["Hours Threshold"].max()
+    ) * 1.15
+
+    max_robots = max_hours / avg_hrs_per_robot
 
     fig = go.Figure()
 
@@ -193,13 +183,27 @@ if uploaded_file:
         yaxis="y2"
     )
 
+    fig.add_scatter(
+        x=df["Region"],
+        y=df["Raw Robots"],
+        mode="lines+markers",
+        name="Robot Qty",
+        line=dict(color="#22C55E", width=4),
+        marker=dict(size=10),
+        yaxis="y2"
+    )
+
     fig.update_layout(
         barmode="stack",
-        yaxis=dict(title="Weighted Hours"),
+        yaxis=dict(
+            title="Weighted Hours",
+            range=[0, max_hours]
+        ),
         yaxis2=dict(
             title="Robots",
             overlaying="y",
-            side="right"
+            side="right",
+            range=[0, max_robots]
         ),
         title="Demand Coverage, White-Space Risk and Hire Trigger",
         legend=dict(orientation="h", y=1.1)
@@ -237,7 +241,7 @@ if uploaded_file:
     )
 
     # =========================
-    # REGIONAL BULLET SUMMARY
+    # BULLET SUMMARY BY REGION
     # =========================
     st.subheader("Hiring Justification by Region")
 
@@ -257,7 +261,7 @@ if uploaded_file:
         )
 
     # =========================
-    # DYNAMIC COMEX SUMMARY
+    # RECOMMENDATION TO COMEX
     # =========================
     hotspot = df.sort_values("Gap", ascending=False).iloc[0]
 
@@ -287,3 +291,4 @@ if uploaded_file:
         (**{robots_now} vs {robot_threshold} robots**).
         """
     )
+
